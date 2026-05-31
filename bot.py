@@ -1,5 +1,5 @@
 import logging
-import asyncio
+import os
 import aiohttp
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,11 +10,11 @@ from telegram.ext import (
 )
 
 # ─── НАСТРОЙКИ ───────────────────────────────────────────────
-TELEGRAM_TOKEN = "8956099025:AAElY513w38boAUO9jMDHYjH4wz7yNcKT_o"           # @BotFather
-WEATHER_API_KEY = "31c0fd7add3bbe71e0476af72ed722c6Э"          # openweathermap.org (бесплатно)
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8956099025:AAElY513w38boAUO9jMDHYjH4wz7yNcKT_o")
+WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "31c0fd7add3bbe71e0476af72ed722c6Э")
 DEFAULT_CITY = "Yerevan"      # твой город по умолчанию
-MORNING_HOUR = 8              # время утреннего дайджеста (UTC)
-MORNING_MINUTE = 0
+MORNING_HOUR = 9              # время утреннего дайджеста (UTC)
+MORNING_MINUTE = 30
 # ─────────────────────────────────────────────────────────────
 
 logging.basicConfig(
