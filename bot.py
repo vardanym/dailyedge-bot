@@ -10,8 +10,8 @@ from telegram.ext import (
 )
 
 # ─── НАСТРОЙКИ ───────────────────────────────────────────────
-TELEGRAM_TOKEN = ""           # @BotFather
-WEATHER_API_KEY = ""          # openweathermap.org (бесплатно)
+TELEGRAM_TOKEN = "8956099025:AAElY513w38boAUO9jMDHYjH4wz7yNcKT_o"           # @BotFather
+WEATHER_API_KEY = "31c0fd7add3bbe71e0476af72ed722c6Э"          # openweathermap.org (бесплатно)
 DEFAULT_CITY = "Yerevan"      # твой город по умолчанию
 MORNING_HOUR = 8              # время утреннего дайджеста (UTC)
 MORNING_MINUTE = 0
