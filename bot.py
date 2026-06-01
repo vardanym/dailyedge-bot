@@ -1,3 +1,4 @@
+
 import logging
 import os
 import aiohttp
@@ -7,9 +8,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    filters, ContextTypes
+    filters, ContextTypes, ConversationHandler
 )
-
+ 
 # ─── НАСТРОЙКИ ───────────────────────────────────────────────
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", "")
@@ -17,16 +18,16 @@ DEFAULT_CITY = "Yerevan"      # твой город по умолчанию
 MORNING_HOUR = 8              # время утреннего дайджеста (UTC)
 MORNING_MINUTE = 0
 # ─────────────────────────────────────────────────────────────
-
+ 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
+ 
 user_data_store: dict = {}
 subscribed_users: set = set()
-
+ 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🌤 Погода", "💰 Курсы валют"],
@@ -35,16 +36,16 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
-
-
+ 
+ 
 DEFAULT_TIMEZONE = "Asia/Yerevan"
-
+ 
 def get_store(chat_id: int) -> dict:
     if chat_id not in user_data_store:
         user_data_store[chat_id] = {"reminders": [], "city": DEFAULT_CITY, "timezone": DEFAULT_TIMEZONE}
     return user_data_store[chat_id]
-
-
+ 
+ 
 # ─── ПОГОДА ──────────────────────────────────────────────────
 WMO_CODES = {
     0: "Ясно ☀️", 1: "Преимущественно ясно 🌤", 2: "Переменная облачность ⛅",
@@ -55,7 +56,7 @@ WMO_CODES = {
     80: "Ливень 🌦", 81: "Сильный ливень 🌧", 82: "Очень сильный ливень ⛈",
     95: "Гроза ⛈", 96: "Гроза с градом ⛈", 99: "Сильная гроза с градом ⛈",
 }
-
+ 
 async def fetch_weather(city: str) -> str:
     try:
         async with aiohttp.ClientSession() as session:
@@ -63,15 +64,15 @@ async def fetch_weather(city: str) -> str:
             geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=ru"
             async with session.get(geo_url) as resp:
                 geo = await resp.json()
-
+ 
             if not geo.get("results"):
                 return f"❌ Город «{city}» не найден."
-
+ 
             result = geo["results"][0]
             lat = result["latitude"]
             lon = result["longitude"]
             city_name = result.get("name", city)
-
+ 
             # Погода по координатам
             weather_url = (
                 f"https://api.open-meteo.com/v1/forecast"
@@ -81,7 +82,7 @@ async def fetch_weather(city: str) -> str:
             )
             async with session.get(weather_url) as resp:
                 data = await resp.json()
-
+ 
         current = data["current"]
         temp = current["temperature_2m"]
         feels = current["apparent_temperature"]
@@ -89,7 +90,7 @@ async def fetch_weather(city: str) -> str:
         wind = current["wind_speed_10m"]
         code = current["weathercode"]
         desc = WMO_CODES.get(code, "Нет данных")
-
+ 
         return (
             f"🌤 Погода в {city_name}\n\n"
             f"🌡 Температура: {temp:.0f}°C (ощущается {feels:.0f}°C)\n"
@@ -100,8 +101,8 @@ async def fetch_weather(city: str) -> str:
     except Exception as e:
         logger.error("Weather error: %s", e)
         return "❌ Не удалось получить погоду."
-
-
+ 
+ 
 # ─── КУРСЫ ВАЛЮТ ─────────────────────────────────────────────
 async def fetch_rates() -> str:
     url = "https://api.exchangerate-api.com/v4/latest/USD"
@@ -109,13 +110,13 @@ async def fetch_rates() -> str:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 data = await resp.json()
-
+ 
         rates = data["rates"]
         amd = rates.get("AMD", 0)
         rub = rates.get("RUB", 0)
         eur = rates.get("EUR", 1)
         uah = rates.get("UAH", 0)
-
+ 
         return (
             f"💰 Курсы валют (к USD)\n\n"
             f"🇦🇲 AMD: {amd:.0f} ֏\n"
@@ -126,8 +127,8 @@ async def fetch_rates() -> str:
     except Exception as e:
         logger.error("Rates error: %s", e)
         return "❌ Не удалось получить курсы валют."
-
-
+ 
+ 
 # ─── КРИПТА ──────────────────────────────────────────────────
 async def fetch_crypto() -> str:
     url = (
@@ -138,7 +139,7 @@ async def fetch_crypto() -> str:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 data = await resp.json()
-
+ 
         def fmt(coin, symbol):
             if coin not in data:
                 return f"— {symbol}: недоступно"
@@ -146,39 +147,60 @@ async def fetch_crypto() -> str:
             change = data[coin].get("usd_24h_change", 0)
             arrow = "📈" if change >= 0 else "📉"
             return f"{arrow} {symbol}: ${price:,.2f} ({change:+.1f}%)"
-
+ 
         lines = ["₿ Курс криптовалют\n", fmt("bitcoin", "BTC"), fmt("ethereum", "ETH"), fmt("solana", "SOL"), fmt("toncoin", "TON")]
         return "\n".join(lines)
     except Exception as e:
         logger.error("Crypto error: %s", e)
         return "❌ Не удалось получить курс крипты."
-
-
+ 
+ 
+# ─── СОСТОЯНИЯ ДИАЛОГА ───────────────────────────────────────
+ASKING_CITY = 1
+ 
 # ─── ХЕНДЛЕРЫ ────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет! Я твой личный помощник.\n\nВыбери что тебя интересует:",
         reply_markup=MAIN_KEYBOARD
     )
-
-
+ 
+ 
 async def handle_weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
     store = get_store(update.effective_chat.id)
-    city = store.get("city", DEFAULT_CITY)
+    current_city = store.get("city", DEFAULT_CITY)
+    await update.message.reply_text(
+        f"🌍 В каком городе показать погоду?\n\n"
+        f"Напиши название или отправь /cancel чтобы отменить.\n"
+        f"(Текущий город: {current_city})"
+    )
+    return ASKING_CITY
+ 
+ 
+async def handle_weather_city_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    city = update.message.text.strip()
+    store = get_store(update.effective_chat.id)
+    store["city"] = city
     await update.message.reply_text("⏳ Получаю погоду...")
     await update.message.reply_text(await fetch_weather(city))
-
-
+    return ConversationHandler.END
+ 
+ 
+async def cancel_weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Отменено.", reply_markup=MAIN_KEYBOARD)
+    return ConversationHandler.END
+ 
+ 
 async def handle_rates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Получаю курсы...")
     await update.message.reply_text(await fetch_rates())
-
-
+ 
+ 
 async def handle_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Получаю курс крипты...")
     await update.message.reply_text(await fetch_crypto())
-
-
+ 
+ 
 async def handle_reminders_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "⏰ Напоминалки\n\n"
@@ -187,29 +209,29 @@ async def handle_reminders_menu(update: Update, context: ContextTypes.DEFAULT_TY
         "Список: /reminders\n"
         "Удалить все: /clear"
     )
-
-
+ 
+ 
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args or len(args) < 2:
         await update.message.reply_text("❌ Формат: /remind HH:MM Текст\nПример: /remind 09:00 Зарядка")
         return
-
+ 
     time_str = args[0]
     text = " ".join(args[1:])
-
+ 
     try:
         hour, minute = map(int, time_str.split(":"))
         assert 0 <= hour <= 23 and 0 <= minute <= 59
     except Exception:
         await update.message.reply_text("❌ Неверное время. Формат: HH:MM (например 14:30)")
         return
-
+ 
     store = get_store(update.effective_chat.id)
     store["reminders"].append({"hour": hour, "minute": minute, "text": text})
     await update.message.reply_text(f"✅ Напоминание установлено!\n⏰ {time_str} — {text}")
-
-
+ 
+ 
 async def list_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     store = get_store(update.effective_chat.id)
     reminders = store.get("reminders", [])
@@ -218,13 +240,13 @@ async def list_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lines = [f"⏰ {r['hour']:02d}:{r['minute']:02d} — {r['text']}" for r in reminders]
     await update.message.reply_text("📋 Твои напоминалки:\n\n" + "\n".join(lines))
-
-
+ 
+ 
 async def clear_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     get_store(update.effective_chat.id)["reminders"] = []
     await update.message.reply_text("🗑 Все напоминалки удалены.")
-
-
+ 
+ 
 # ─── ИСПРАВЛЕНИЕ 1: показываем город пользователя при подписке ───
 async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -240,8 +262,8 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"буду присылать погоду для {city} и курсы.\n\n"
             f"Сменить город: /city Название"
         )
-
-
+ 
+ 
 async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
@@ -267,8 +289,8 @@ async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     get_store(update.effective_chat.id)["timezone"] = tz_name
     await update.message.reply_text(f"✅ Часовой пояс установлен: {tz_name}")
-
-
+ 
+ 
 async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
@@ -277,8 +299,8 @@ async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     city = " ".join(args)
     get_store(update.effective_chat.id)["city"] = city
     await update.message.reply_text(f"✅ Город изменён на: {city}")
-
-
+ 
+ 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     handlers = {
@@ -300,10 +322,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/city Город — сменить город\n"
             "/timezone Зона — часовой пояс (напр. Asia/Yerevan)"
         )
-
-
+ 
+ 
 # ─── ПЛАНИРОВЩИК ─────────────────────────────────────────────
-
+ 
 # ─── ИСПРАВЛЕНИЕ 2: каждому пользователю погода его города ───
 async def send_morning_digest(app: Application):
     if not subscribed_users:
@@ -319,8 +341,8 @@ async def send_morning_digest(app: Application):
             await app.bot.send_message(chat_id=chat_id, text=text)
         except Exception as e:
             logger.error("Morning digest error for %s: %s", chat_id, e)
-
-
+ 
+ 
 async def check_reminders(app: Application):
     for chat_id, store in user_data_store.items():
         tz_name = store.get("timezone", DEFAULT_TIMEZONE)
@@ -329,7 +351,7 @@ async def check_reminders(app: Application):
         except Exception:
             tz = pytz.timezone(DEFAULT_TIMEZONE)
         now = datetime.now(tz)
-
+ 
         for reminder in store.get("reminders", []):
             if reminder["hour"] == now.hour and reminder["minute"] == now.minute:
                 if reminder.get("fired_at") == f"{now.date()} {now.hour}:{now.minute}":
@@ -342,8 +364,8 @@ async def check_reminders(app: Application):
                     )
                 except Exception as e:
                     logger.error("Reminder error: %s", e)
-
-
+ 
+ 
 # ─── MAIN ─────────────────────────────────────────────────────
 def main():
     if not TELEGRAM_TOKEN:
