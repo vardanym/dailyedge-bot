@@ -222,6 +222,7 @@ async def clear_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🗑 Все напоминалки удалены.")
 
 
+# ─── ИСПРАВЛЕНИЕ 1: показываем город пользователя при подписке ───
 async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id in subscribed_users:
@@ -229,9 +230,12 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("🔕 Утренний дайджест отключён.")
     else:
         subscribed_users.add(chat_id)
+        store = get_store(chat_id)
+        city = store.get("city", DEFAULT_CITY)
         await update.message.reply_text(
             f"🔔 Готово! Каждое утро в {MORNING_HOUR:02d}:{MORNING_MINUTE:02d} UTC "
-            f"буду присылать погоду и курсы."
+            f"буду присылать погоду для {city} и курсы.\n\n"
+            f"Сменить город: /city Название"
         )
 
 
@@ -268,15 +272,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─── ПЛАНИРОВЩИК ─────────────────────────────────────────────
+
+# ─── ИСПРАВЛЕНИЕ 2: каждому пользователю погода его города ───
 async def send_morning_digest(app: Application):
     if not subscribed_users:
         return
-    weather = await fetch_weather(DEFAULT_CITY)
     rates = await fetch_rates()
     crypto = await fetch_crypto()
-    text = f"☀️ Доброе утро!\n\n{weather}\n\n{rates}\n\n{crypto}"
     for chat_id in list(subscribed_users):
         try:
+            store = get_store(chat_id)
+            city = store.get("city", DEFAULT_CITY)
+            weather = await fetch_weather(city)
+            text = f"☀️ Доброе утро!\n\n{weather}\n\n{rates}\n\n{crypto}"
             await app.bot.send_message(chat_id=chat_id, text=text)
         except Exception as e:
             logger.error("Morning digest error for %s: %s", chat_id, e)
