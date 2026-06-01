@@ -348,19 +348,19 @@ async def check_reminders(app: Application):
 def main():
     if not TELEGRAM_TOKEN:
         raise ValueError("TELEGRAM_TOKEN не задан!")
-
+ 
     scheduler = AsyncIOScheduler()
-
+ 
     async def on_startup(app: Application):
         scheduler.add_job(send_morning_digest, "cron",
                           hour=MORNING_HOUR, minute=MORNING_MINUTE, args=[app])
         scheduler.add_job(check_reminders, "cron", minute="*", args=[app])
         scheduler.start()
         logger.info("Планировщик запущен!")
-
+ 
     async def on_shutdown(app: Application):
         scheduler.shutdown()
-
+ 
     app = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
@@ -368,7 +368,18 @@ def main():
         .post_shutdown(on_shutdown)
         .build()
     )
-
+ 
+    weather_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^🌤 Погода$"), handle_weather)],
+        states={
+            ASKING_CITY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_weather_city_input)
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_weather)],
+    )
+ 
+    app.add_handler(weather_conv)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("remind", remind_command))
     app.add_handler(CommandHandler("reminders", list_reminders))
@@ -376,10 +387,10 @@ def main():
     app.add_handler(CommandHandler("city", set_city))
     app.add_handler(CommandHandler("timezone", set_timezone))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
+ 
     logger.info("Бот запущен!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
+ 
+ 
 if __name__ == "__main__":
     main()
