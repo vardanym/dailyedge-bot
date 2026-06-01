@@ -2,6 +2,7 @@ import logging
 import os
 import aiohttp
 from datetime import datetime
+import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -36,9 +37,11 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
 )
 
 
+DEFAULT_TIMEZONE = "Asia/Yerevan"
+
 def get_store(chat_id: int) -> dict:
     if chat_id not in user_data_store:
-        user_data_store[chat_id] = {"reminders": [], "city": DEFAULT_CITY}
+        user_data_store[chat_id] = {"reminders": [], "city": DEFAULT_CITY, "timezone": DEFAULT_TIMEZONE}
     return user_data_store[chat_id]
 
 
@@ -239,6 +242,33 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 
+async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Формат: /timezone Зона\n\n"
+            "Примеры:\n"
+            "/timezone Asia/Yerevan\n"
+            "/timezone Europe/Moscow\n"
+            "/timezone Europe/Kiev\n"
+            "/timezone Asia/Tbilisi\n"
+            "/timezone Europe/Berlin"
+        )
+        return
+    tz_name = args[0]
+    try:
+        pytz.timezone(tz_name)
+    except Exception:
+        await update.message.reply_text(
+            f"❌ Часовой пояс «{tz_name}» не найден.\n\n"
+            "Используй формат: Continent/City\n"
+            "Например: Asia/Yerevan, Europe/Moscow"
+        )
+        return
+    get_store(update.effective_chat.id)["timezone"] = tz_name
+    await update.message.reply_text(f"✅ Часовой пояс установлен: {tz_name}")
+
+
 async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
@@ -267,7 +297,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/remind HH:MM Текст — напоминание\n"
             "/reminders — список\n"
             "/clear — удалить все\n"
-            "/city Город — сменить город"
+            "/city Город — сменить город\n"
+            "/timezone Зона — часовой пояс (напр. Asia/Yerevan)"
         )
 
 
@@ -291,10 +322,19 @@ async def send_morning_digest(app: Application):
 
 
 async def check_reminders(app: Application):
-    now = datetime.utcnow()
     for chat_id, store in user_data_store.items():
+        tz_name = store.get("timezone", DEFAULT_TIMEZONE)
+        try:
+            tz = pytz.timezone(tz_name)
+        except Exception:
+            tz = pytz.timezone(DEFAULT_TIMEZONE)
+        now = datetime.now(tz)
+
         for reminder in store.get("reminders", []):
             if reminder["hour"] == now.hour and reminder["minute"] == now.minute:
+                if reminder.get("fired_at") == f"{now.date()} {now.hour}:{now.minute}":
+                    continue  # уже сработало в эту минуту
+                reminder["fired_at"] = f"{now.date()} {now.hour}:{now.minute}"
                 try:
                     await app.bot.send_message(
                         chat_id=chat_id,
@@ -334,6 +374,7 @@ def main():
     app.add_handler(CommandHandler("reminders", list_reminders))
     app.add_handler(CommandHandler("clear", clear_reminders))
     app.add_handler(CommandHandler("city", set_city))
+    app.add_handler(CommandHandler("timezone", set_timezone))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     logger.info("Бот запущен!")
