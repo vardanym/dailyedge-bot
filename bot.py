@@ -129,7 +129,7 @@ async def fetch_rates() -> str:
 async def fetch_crypto() -> str:
     url = (
         "https://api.coingecko.com/api/v3/simple/price"
-        "?ids=bitcoin,ethereum,toncoin,solana&vs_currencies=usd&include_24hr_change=true"
+        "?ids=bitcoin,ethereum,the-open-network,solana&vs_currencies=usd&include_24hr_change=true"
     )
     try:
         async with aiohttp.ClientSession() as session:
@@ -144,7 +144,7 @@ async def fetch_crypto() -> str:
             arrow = "📈" if change >= 0 else "📉"
             return f"{arrow} {symbol}: ${price:,.2f} ({change:+.1f}%)"
 
-        lines = ["₿ Курс криптовалют\n", fmt("bitcoin", "BTC"), fmt("ethereum", "ETH"), fmt("solana", "SOL"), fmt("toncoin", "TON")]
+        lines = ["₿ Курс криптовалют\n", fmt("bitcoin", "BTC"), fmt("ethereum", "ETH"), fmt("solana", "SOL"), fmt("the-open-network", "TON")]
         return "\n".join(lines)
     except Exception as e:
         logger.error("Crypto error: %s", e)
