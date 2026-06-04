@@ -37,6 +37,25 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+ARMENIA_CITIES_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["🏙 Ереван", "🏔 Гюмри"],
+        ["🌿 Ванадзор", "🏛 Вагаршапат"],
+        ["🌊 Севан", "🌄 Дилижан"],
+        ["🔙 Назад"],
+    ],
+    resize_keyboard=True
+)
+
+CITY_MAP = {
+    "🏙 Ереван": "Yerevan",
+    "🏔 Гюмри": "Gyumri",
+    "🌿 Ванадзор": "Vanadzor",
+    "🏛 Вагаршапат": "Vagharshapat",
+    "🌊 Севан": "Sevan",
+    "🌄 Дилижан": "Dilijan",
+}
+
 
 def get_store(chat_id: int) -> dict:
     if chat_id not in user_data_store:
