@@ -146,24 +146,20 @@ async def fetch_rates() -> str:
 
 # ─── КРИПТА ──────────────────────────────────────────────────
 async def fetch_crypto() -> str:
-    url = (
-        "https://api.coingecko.com/api/v3/simple/price"
-        "?ids=bitcoin,ethereum,the-open-network,solana&vs_currencies=usd&include_24hr_change=true"
-    )
+    symbols = [("BTCUSDT", "BTC"), ("ETHUSDT", "ETH"), ("SOLUSDT", "SOL"), ("TONUSDT", "TON")]
+    url = "https://api.binance.com/api/v3/ticker/24hr?symbols=" + \
+          str([s[0] for s in symbols]).replace("'", '"')
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 data = await resp.json()
 
-        def fmt(coin, symbol):
-            if coin not in data:
-                return f"— {symbol}: недоступно"
-            price = data[coin]["usd"]
-            change = data[coin].get("usd_24h_change", 0)
+        lines = ["₿ Курс криптовалют\n"]
+        for item, (_, symbol) in zip(data, symbols):
+            price = float(item["lastPrice"])
+            change = float(item["priceChangePercent"])
             arrow = "📈" if change >= 0 else "📉"
-            return f"{arrow} {symbol}: ${price:,.2f} ({change:+.1f}%)"
-
-        lines = ["₿ Курс криптовалют\n", fmt("bitcoin", "BTC"), fmt("ethereum", "ETH"), fmt("solana", "SOL"), fmt("the-open-network", "TON")]
+            lines.append(f"{arrow} {symbol}: ${price:,.2f} ({change:+.1f}%)")
         return "\n".join(lines)
     except Exception as e:
         logger.error("Crypto error: %s", e)
